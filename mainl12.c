@@ -34,13 +34,14 @@
 /*------------------------------------------------------------------------------
  * VARIABLES 
  ------------------------------------------------------------------------------*/
-uint8_t address = 0, cont = 0, sleep = 0;
+uint8_t address = 0, pot = 0, sleep = 0;
 
 /*------------------------------------------------------------------------------
  * PROTOTIPO DE FUNCIONES 
  ------------------------------------------------------------------------------*/
 void setup(void);
-
+uint8_t read_EEPROM(uint8_t address);
+void write_EEPROM(uint8_t address, uint8_t data);
 
 /*------------------------------------------------------------------------------
  * INTERRUPCIONES 
@@ -48,7 +49,8 @@ void setup(void);
 void __interrupt() isr (void){
     if(PIR1bits.ADIF){                  // Fue interrupción del ADC?
             if(ADCON0bits.CHS == 1){    // Verificamos sea AN0 el canal seleccionado
-                PORTC = ADRESH;         // Mostramos ADRESH en PORTC
+                pot = ADRESH;         // Mostramos ADRESH en PORTC
+                PORTC = pot;
             }
         PIR1bits.ADIF = 0;              // Limpiamos bandera de interrupci?n  
     } 
@@ -58,6 +60,10 @@ void __interrupt() isr (void){
             }
             else if(!PORTBbits.RB1){               //Sie estamos despiertos, sleep
                 sleep = 1;
+            }
+            else if(!PORTBbits.RB2){
+                sleep = 0;
+                write_EEPROM(address, pot);
             }
             INTCONbits.RBIF = 0;        // Limpiamos bandera de interrupción del puerto B
             }
@@ -81,6 +87,7 @@ void main(void) {
         else if(sleep == 0){            
             PIE1bits.ADIE = 1;
         }
+        PORTD = read_EEPROM(address); 
     }
     return;
 }
@@ -92,18 +99,20 @@ void setup(void){
     ANSEL = 0b10;
     ANSELH = 0;
     
-    TRISB = 0b011;
+    TRISB = 0b111;
     PORTB = 0;
     
     TRISA = 0b10;
     TRISC = 0;
+    TRISD = 0;
     
     PORTA = 0;
     PORTC = 0;
+    PORTD = 0;
     
     OPTION_REGbits.nRBPU = 0;
-    WPUB = 0b0011;
-    IOCB = 0b0011;
+    WPUB = 0b0111;
+    IOCB = 0b0111;
     
     // ADC
     ADCON0bits.ADCS = 0b01;     // Fosc/8
@@ -122,3 +131,28 @@ void setup(void){
     INTCONbits.GIE = 1;
 }
 
+
+uint8_t read_EEPROM(uint8_t address){
+    EEADR = address;
+    EECON1bits.EEPGD = 0;  // Lectura en la EEPROM
+    EECON1bits.RD = 1;       // Conseguimos dato de la EEPROM
+    return EEDAT;              // Regresamos ese dato leido 
+}
+
+
+void write_EEPROM(uint8_t address, uint8_t data){
+    EEADR = address;
+    EEDAT = data;
+    EECON1bits.EEPGD = 0; // Escritura en la EEPROM
+    EECON1bits.WREN = 1;  // Habilitamos la escritura a la EEPROM
+    
+    INTCONbits.GIE = 0;    // Deshabilitamos las interrupciones
+    EECON2 = 0x55;      
+    EECON2 = 0xAA;
+    
+    EECON1bits.WR = 1;    // Se inicia la escritura
+    
+    EECON1bits.WREN = 0;     // se deshabilita escritura en la EEPROM
+    INTCONbits.RBIF = 0;
+    INTCONbits.GIE = 1;   // Habilitamos las interrupciones
+}
